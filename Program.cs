@@ -1,43 +1,48 @@
-using SegalAPI.Data;
-using SegalAPI.Interfaces;
-using SegalAPI.Services;
-
 var builder = WebApplication.CreateBuilder(args);
 
+// Set up Kestrel and other services
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
-    serverOptions.ListenLocalhost(5001); // Set Kestrel to listen on port 5001
+    // Check if the PORT environment variable is set (which it will be on Heroku)
+    var port = Environment.GetEnvironmentVariable("PORT");
+    if (string.IsNullOrEmpty(port))
+    {
+        // If no PORT variable is found, default to 5001 for local development
+        serverOptions.ListenLocalhost(5001);
+    }
+    else
+    {
+        // Use the Heroku-assigned port when running on Heroku
+        serverOptions.ListenAnyIP(int.Parse(port));
+    }
 });
 
 // Add services to the container.
-//builder.Services.AddDbContext<AppDbContext>(options =>
-//    options.UseSqlite("Data Source=clientcredentials.db"));
-builder.Services.AddHttpClient<TokenService>();
-builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddControllers();
 
-// Register Swagger generator and configure Swagger options
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(); // Registers Swagger generator
+// Additional configuration...
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-// Always use Swagger UI regardless of the environment
-app.UseSwagger();
-app.UseSwaggerUI(c =>
+// Configure the HTTP request pipeline and other middleware
+if (app.Environment.IsDevelopment())
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "My API V1");
-    c.RoutePrefix = "swagger"; // This makes Swagger UI available at <root>/swagger
-});
+    app.UseDeveloperExceptionPage();
+}
+else
+{
+    app.UseExceptionHandler("/Error");
+    app.UseHsts();
+}
 
-app.UseExceptionHandler("/Error");
+app.UseHttpsRedirection();
+app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthorization();
 
 app.UseEndpoints(endpoints =>
 {
-    endpoints.MapControllers();  // This line is crucial
+    endpoints.MapControllers();
 });
 
 app.Run();
