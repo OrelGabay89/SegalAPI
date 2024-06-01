@@ -1,4 +1,4 @@
-﻿namespace IsraelTax.Interfaces
+﻿namespace SegalAPI.Interfaces
 {
     public interface ITokenService
     {

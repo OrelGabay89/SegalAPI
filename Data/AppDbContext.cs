@@ -1,7 +1,7 @@
-﻿using IsraelTax.Shared.Models;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
+using SegalAPI.Models;
 
-namespace IsraelTax.Data
+namespace SegalAPI.Data
 {
     public class AppDbContext : DbContext
     {

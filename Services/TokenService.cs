@@ -1,9 +1,9 @@
 ﻿using System.Text;
-using IsraelTax.Interfaces;
-using IsraelTax.Shared.Models;
 using Newtonsoft.Json;
+using SegalAPI.Interfaces;
+using SegalAPI.Models;
 
-namespace IsraeliTaxTokenFetcher.Services
+namespace SegalAPI.Services
 {
     public class TokenService : ITokenService
     {

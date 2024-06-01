@@ -1,13 +1,11 @@
-﻿using IsraeliTaxTokenFetcher.Services;
-using IsraelTax.Data;
-using IsraelTax.Interfaces;
-using IsraelTax.Shared.Models;
-using Microsoft.AspNetCore.Http;
+﻿
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Xml.Linq;
+using SegalAPI.Data;
+using SegalAPI.Interfaces;
+using SegalAPI.Models;
 
-namespace IsraelTax.Controllers
+namespace SegalAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]

@@ -1,8 +1,6 @@
-using IsraeliTaxTokenFetcher.Services;
-using System.IO;
-using IsraelTax.Interfaces;
-using IsraelTax.Data;
-using Microsoft.EntityFrameworkCore;
+using SegalAPI.Data;
+using SegalAPI.Interfaces;
+using SegalAPI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,8 +10,8 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 });
 
 // Add services to the container.
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite("Data Source=clientcredentials.db"));
+//builder.Services.AddDbContext<AppDbContext>(options =>
+//    options.UseSqlite("Data Source=clientcredentials.db"));
 builder.Services.AddHttpClient<TokenService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddControllers();
