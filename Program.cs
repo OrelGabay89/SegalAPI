@@ -23,22 +23,16 @@ builder.Services.AddSwaggerGen(); // Registers Swagger generator
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+// Always use Swagger UI regardless of the environment
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "My API V1");
-        c.RoutePrefix = "swagger"; // This makes Swagger UI available at <root>/swagger
-    });
-}
-else
-{
-    app.UseExceptionHandler("/Error");
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "My API V1");
+    c.RoutePrefix = "swagger"; // This makes Swagger UI available at <root>/swagger
+});
 
+app.UseExceptionHandler("/Error");
 app.UseRouting();
-
 app.UseAuthorization();
 
 app.UseEndpoints(endpoints =>
