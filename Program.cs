@@ -1,40 +1,41 @@
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using SegalAPI;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net;
-using System.Threading.Tasks;
+var builder = WebApplication.CreateBuilder(args);
 
-namespace SegalAPI
+// Add services to the container.
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+
+builder.Services.AddSwaggerGen();
+
+var app = builder.Build();
+
+
+app.UseSwagger();
+app.UseSwaggerUI();
+
+app.UseExceptionHandler("/Home/Error");
+app.UseHsts();
+
+
+app.UseStaticFiles();
+
+app.UseRouting();
+
+app.UseAuthorization();
+
+app.MapControllers();
+
+// Redirect root URL to Swagger UI
+app.Use(async (context, next) =>
 {
-    public class Program
+    if (context.Request.Path == "/")
     {
-        public static void Main(string[] args)
-        {
-            CreateHostBuilder(args).Build().Run();
-        }
-
-        public static IHostBuilder CreateHostBuilder(string[] args) =>
-            Host.CreateDefaultBuilder(args)
-                .ConfigureWebHostDefaults(webBuilder =>
-                {
-                    webBuilder.ConfigureKestrel(serverOptions =>
-                    {
-                        if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development")
-                        {
-                            serverOptions.Listen(IPAddress.Loopback, 5001); // Listen on port 5001 for localhost
-                        }
-                        else
-                        {
-                            var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
-                            serverOptions.Listen(IPAddress.Any, Convert.ToInt32(port));
-                        }
-                    })
-                    .UseStartup<Startup>();
-                });
+        context.Response.Redirect("/swagger");
+        return;
     }
-}
+    await next();
+});
+
+// Get the port from the environment variable or use a default port (e.g., 5000)
+var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
+
+app.Run($"http://*:{port}");
