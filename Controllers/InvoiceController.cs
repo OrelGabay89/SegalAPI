@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SegalAPI.Data;
 using SegalAPI.Interfaces;
 using SegalAPI.Models;
+using SegalAPI.Services;
 
 namespace SegalAPI.Controllers
 {
@@ -14,11 +15,12 @@ namespace SegalAPI.Controllers
         private readonly ILogger<InvoiceController> _logger;
         private readonly AppDbContext _context;
         private readonly IConfiguration _configuration;
-
+        private readonly ITokenService _tokenService;
         public InvoiceController(ILogger<InvoiceController> logger, IConfiguration configuration, ITokenService tokenService)
         {
             _logger = logger;
             _configuration = configuration;
+            _tokenService = tokenService;
         }
 
         [HttpGet("_alive")]
@@ -35,18 +37,16 @@ namespace SegalAPI.Controllers
                 _logger.LogError("Received null data");
                 return BadRequest("Data cannot be null");
             }
-            // Load credentials from configuration
-            string clientId = _configuration["AppSettings:DefaultClientId"];
-            string secret = _configuration["AppSettings:DefaultSecret"];
 
-            var credentials = await _context.ClientCredentials.FirstOrDefaultAsync();
-            if (credentials == null)
-            {
-                _logger.LogError("No credentials found in database");
-                return StatusCode(500, "Server error: credentials not found");
-            }
+            // Assuming the authorization code is obtained and stored elsewhere
+            string authorizationCode = "obtained_authorization_code";
 
-            // Use credentials.ClientId and credentials.Secret as needed
+            // Step 3: Get access token using authorization code
+            string accessToken = await _tokenService.GetAccessToken(authorizationCode);
+
+            // Step 5: Use access token to get invoice number
+            await _tokenService.GetInvoiceNumber(accessToken);
+
             _logger.LogInformation($"Data processed for {data.Id}");
             return Ok($"Data received with ID: {data.Id}");
         }

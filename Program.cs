@@ -49,6 +49,6 @@ app.Use(async (context, next) =>
 });
 
 // Get the port from the environment variable or use a default port (e.g., 5000)
-var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
+var port = Environment.GetEnvironmentVariable("PORT") ?? "5001";
 
 app.Run($"http://*:{port}");

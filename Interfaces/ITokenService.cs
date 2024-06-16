@@ -2,7 +2,10 @@
 {
     public interface ITokenService
     {
-        Task<string> FetchTokenUsingCode(string code);
+        void RedirectUserForAuthorization();
+        Task<string> GetAccessToken(string authorizationCode);
+        Task<string> RefreshAccessToken(string refreshToken);
+        Task<string> GetInvoiceNumber(string accessToken);
 
     }
 }
