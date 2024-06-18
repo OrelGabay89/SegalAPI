@@ -4,8 +4,11 @@
     {
         void RedirectUserForAuthorization();
         Task<string> GetAccessToken(string authorizationCode);
-        Task<string> RefreshAccessToken(string refreshToken);
-        Task<string> GetInvoiceNumber(string accessToken);
+        Task<string> RefreshAccessToken();
+        Task<string> GetInvoiceNumber();
+        string GetRefreshToken();
+        int GetTokenExpiration();
+        void SetAccessToken(string accessToken);
 
     }
 }

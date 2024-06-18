@@ -1,10 +1,8 @@
-﻿
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using SegalAPI.Data;
+﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using SegalAPI.Interfaces;
-using SegalAPI.Models;
-using SegalAPI.Services;
+using SegalAPI.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace SegalAPI.Controllers
 {
@@ -13,14 +11,14 @@ namespace SegalAPI.Controllers
     public class InvoiceController : ControllerBase
     {
         private readonly ILogger<InvoiceController> _logger;
-        private readonly AppDbContext _context;
-        private readonly IConfiguration _configuration;
         private readonly ITokenService _tokenService;
-        public InvoiceController(ILogger<InvoiceController> logger, IConfiguration configuration, ITokenService tokenService)
+        private readonly AppDbContext _context;
+
+        public InvoiceController(ILogger<InvoiceController> logger, ITokenService tokenService, AppDbContext context)
         {
             _logger = logger;
-            _configuration = configuration;
             _tokenService = tokenService;
+            _context = context;
         }
 
         [HttpGet("_alive")]
@@ -30,25 +28,34 @@ namespace SegalAPI.Controllers
         }
 
         [HttpPost("process-data")]
-        public async Task<IActionResult> ProcessData([FromBody] InvoiceCSVData data)
+        public async Task<IActionResult> ProcessData()
         {
-            if (data == null)
+            try
             {
-                _logger.LogError("Received null data");
-                return BadRequest("Data cannot be null");
+                // Retrieve the most recent token from the database
+                var token = await _context.Tokens.OrderByDescending(t => t.Id).FirstOrDefaultAsync();
+
+                if (token == null || token.Expiration <= DateTime.UtcNow)
+                {
+                    // If the token is null or expired, refresh it
+                    string newAccessToken = await _tokenService.RefreshAccessToken();
+                    token.AccessToken = newAccessToken;
+                    token.Expiration = DateTime.UtcNow.AddSeconds(_tokenService.GetTokenExpiration());
+
+                    _context.Tokens.Update(token);
+                    await _context.SaveChangesAsync();
+                }
+
+                // Use the access token to get the invoice number
+                _tokenService.SetAccessToken(token.AccessToken);
+                string invoiceNumber = await _tokenService.GetInvoiceNumber();
+                return Ok(invoiceNumber);
             }
-
-            // Assuming the authorization code is obtained and stored elsewhere
-            string authorizationCode = "obtained_authorization_code";
-
-            // Step 3: Get access token using authorization code
-            string accessToken = await _tokenService.GetAccessToken(authorizationCode);
-
-            // Step 5: Use access token to get invoice number
-            await _tokenService.GetInvoiceNumber(accessToken);
-
-            _logger.LogInformation($"Data processed for {data.Id}");
-            return Ok($"Data received with ID: {data.Id}");
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing data");
+                return StatusCode(500, ex.Message);
+            }
         }
     }
 }

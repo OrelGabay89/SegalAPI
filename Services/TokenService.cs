@@ -1,6 +1,9 @@
-﻿
-using SegalAPI.Interfaces;
+﻿using SegalAPI.Interfaces;
+using SegalAPI.Data;
+using SegalAPI.Models;
 using System.Net.Http.Headers;
+using Newtonsoft.Json.Linq;
+using Microsoft.EntityFrameworkCore;
 
 namespace SegalAPI.Services
 {
@@ -8,6 +11,7 @@ namespace SegalAPI.Services
     {
         private readonly HttpClient _httpClient;
         private readonly IConfiguration _configuration;
+        private readonly AppDbContext _context;
 
         private readonly string clientId;
         private readonly string clientSecret;
@@ -15,10 +19,15 @@ namespace SegalAPI.Services
         private readonly string authorizationUrl;
         private readonly string tokenUrl;
 
-        public TokenService(HttpClient httpClient, IConfiguration configuration)
+        private static string _accessToken;
+        private static string _refreshToken;
+        private static int _tokenExpiration;
+
+        public TokenService(HttpClient httpClient, IConfiguration configuration, AppDbContext context)
         {
             _httpClient = httpClient;
             _configuration = configuration;
+            _context = context;
 
             clientId = _configuration["OAuth:ClientId"];
             clientSecret = _configuration["OAuth:ClientSecret"];
@@ -49,11 +58,26 @@ namespace SegalAPI.Services
             response.EnsureSuccessStatusCode();
 
             var responseContent = await response.Content.ReadAsStringAsync();
-            dynamic tokenResponse = Newtonsoft.Json.JsonConvert.DeserializeObject(responseContent);
-            return tokenResponse.access_token;
+            JObject tokenResponse = JObject.Parse(responseContent);
+            _accessToken = tokenResponse["access_token"].ToString();
+            _refreshToken = tokenResponse["refresh_token"].ToString();
+            _tokenExpiration = tokenResponse["expires_in"].ToObject<int>();
+
+            // Save tokens to database
+            var token = new Token
+            {
+                AccessToken = _accessToken,
+                RefreshToken = _refreshToken,
+                Expiration = DateTime.UtcNow.AddSeconds(_tokenExpiration)
+            };
+
+            _context.Tokens.Add(token);
+            await _context.SaveChangesAsync();
+
+            return _accessToken;
         }
 
-        public async Task<string> RefreshAccessToken(string refreshToken)
+        public async Task<string> RefreshAccessToken()
         {
             var request = new HttpRequestMessage(HttpMethod.Post, tokenUrl);
             request.Content = new FormUrlEncodedContent(new[]
@@ -62,19 +86,59 @@ namespace SegalAPI.Services
                 new KeyValuePair<string, string>("client_secret", clientSecret),
                 new KeyValuePair<string, string>("redirect_uri", redirectUri),
                 new KeyValuePair<string, string>("grant_type", "refresh_token"),
-                new KeyValuePair<string, string>("refresh_token", refreshToken)
+                new KeyValuePair<string, string>("refresh_token", _refreshToken)
             });
 
             HttpResponseMessage response = await _httpClient.SendAsync(request);
             response.EnsureSuccessStatusCode();
 
             var responseContent = await response.Content.ReadAsStringAsync();
-            dynamic tokenResponse = Newtonsoft.Json.JsonConvert.DeserializeObject(responseContent);
-            return tokenResponse.access_token;
+            JObject tokenResponse = JObject.Parse(responseContent);
+            _accessToken = tokenResponse["access_token"].ToString();
+            _tokenExpiration = tokenResponse["expires_in"].ToObject<int>();
+
+            // Update token in database
+            var token = await _context.Tokens.FirstOrDefaultAsync(t => t.RefreshToken == _refreshToken);
+            if (token != null)
+            {
+                token.AccessToken = _accessToken;
+                token.Expiration = DateTime.UtcNow.AddSeconds(_tokenExpiration);
+                _context.Tokens.Update(token);
+                await _context.SaveChangesAsync();
+            }
+
+            return _accessToken;
         }
-        public async Task<string> GetInvoiceNumber(string accessToken)
+
+        public async Task<string> GetInvoiceNumber()
         {
-            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            try
+            {
+                // Ensure we have a valid access token
+                if (string.IsNullOrEmpty(_accessToken))
+                {
+                    throw new Exception("Access token is not available.");
+                }
+
+                return await GetInvoiceNumberWithAccessToken();
+            }
+            catch (Exception ex)
+            {
+                // If an error occurs, try to refresh the access token and retry
+                if (ex.Message.Contains("401")) // Unauthorized error
+                {
+                    await RefreshAccessToken();
+                    return await GetInvoiceNumberWithAccessToken();
+                }
+
+                // Handle other exceptions
+                throw new Exception("Error getting invoice number", ex);
+            }
+        }
+
+        private async Task<string> GetInvoiceNumberWithAccessToken()
+        {
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
 
             var invoiceRequest = new
             {
@@ -109,15 +173,30 @@ namespace SegalAPI.Services
                 }
             };
 
-            var request = new HttpRequestMessage(HttpMethod.Post, "invoiceUrl");
+            var request = new HttpRequestMessage(HttpMethod.Post, "https://openapi.taxes.gov.il/shaam/sandbox/longtimeacces");
             request.Content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(invoiceRequest), System.Text.Encoding.UTF8, "application/json");
 
             HttpResponseMessage response = await _httpClient.SendAsync(request);
             response.EnsureSuccessStatusCode();
 
             var responseContent = await response.Content.ReadAsStringAsync();
-            dynamic invoiceResponse = Newtonsoft.Json.JsonConvert.DeserializeObject(responseContent);
-            return invoiceResponse.Invoice_Allocation_Number;
+            JObject invoiceResponse = JObject.Parse(responseContent);
+            return invoiceResponse["Invoice_Allocation_Number"].ToString();
+        }
+
+        public string GetRefreshToken()
+        {
+            return _refreshToken;
+        }
+
+        public int GetTokenExpiration()
+        {
+            return _tokenExpiration;
+        }
+
+        public void SetAccessToken(string accessToken)
+        {
+            _accessToken = accessToken;
         }
     }
 }
