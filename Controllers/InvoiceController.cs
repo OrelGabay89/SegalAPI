@@ -46,7 +46,7 @@ namespace SegalAPI.Controllers
                     await _context.SaveChangesAsync();
                 }
 
-            string authorizationCode = "obtained_authorization_code";
+                string authorizationCode = "obtained_authorization_code";
                 // Use the access token to get the invoice number
                 _tokenService.SetAccessToken(token.AccessToken);
                 string invoiceNumber = await _tokenService.GetInvoiceNumber();

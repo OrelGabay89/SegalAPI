@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+using SegalAPI.Data;
 using SegalAPI.Interfaces;
 using SegalAPI.Services;
 
@@ -8,7 +10,10 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHttpClient();  // Register HttpClient
-builder.Services.AddSingleton<ITokenService, TokenService>();
+builder.Services.AddScoped<ITokenService, TokenService>();
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 var app = builder.Build();
 
