@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using SegalAPI.Interfaces;
 using SegalAPI.Data;
 using Microsoft.EntityFrameworkCore;
+using SegalAPI.Models;
 
 namespace SegalAPI.Controllers
 {
@@ -28,28 +29,24 @@ namespace SegalAPI.Controllers
         }
 
         [HttpPost("process-data")]
-        public async Task<IActionResult> ProcessData()
+        public async Task<IActionResult> ProcessData([FromBody] InvoiceCSVData data)
         {
             try
             {
                 // Retrieve the most recent token from the database
                 var token = await _context.Tokens.OrderByDescending(t => t.Id).FirstOrDefaultAsync();
 
-                if (token == null || token.Expiration <= DateTime.UtcNow)
+                // Use the access token to get the invoice number
+                _tokenService.SetAccessToken(token.AccessToken, token.RefreshToken);
+
+                if (token.Expiration <= DateTime.Now)
                 {
                     // If the token is null or expired, refresh it
-                    string newAccessToken = await _tokenService.RefreshAccessToken();
-                    token.AccessToken = newAccessToken;
-                    token.Expiration = DateTime.UtcNow.AddSeconds(_tokenService.GetTokenExpiration());
-
-                    _context.Tokens.Update(token);
-                    await _context.SaveChangesAsync();
+                    var newToken =  await _tokenService.RefreshAccessToken();
+                    _tokenService.SetAccessToken(newToken.AccessToken, newToken.RefreshToken);
                 }
 
-                string authorizationCode = "obtained_authorization_code";
-                // Use the access token to get the invoice number
-                _tokenService.SetAccessToken(token.AccessToken);
-                string invoiceNumber = await _tokenService.GetInvoiceNumber();
+                string invoiceNumber = await _tokenService.GetInvoiceNumber(data);
                 return Ok(invoiceNumber);
             }
             catch (Exception ex)

@@ -4,6 +4,7 @@ using SegalAPI.Models;
 using System.Net.Http.Headers;
 using Newtonsoft.Json.Linq;
 using Microsoft.EntityFrameworkCore;
+using System.Text;
 
 namespace SegalAPI.Services
 {
@@ -44,49 +45,95 @@ namespace SegalAPI.Services
 
         public async Task<string> GetAccessToken(string authorizationCode)
         {
-            var request = new HttpRequestMessage(HttpMethod.Post, tokenUrl);
-            request.Content = new FormUrlEncodedContent(new[]
+            var content = new FormUrlEncodedContent(new[]
             {
-                new KeyValuePair<string, string>("client_id", clientId),
-                new KeyValuePair<string, string>("client_secret", clientSecret),
-                new KeyValuePair<string, string>("redirect_uri", redirectUri),
-                new KeyValuePair<string, string>("grant_type", "authorization_code"),
-                new KeyValuePair<string, string>("code", authorizationCode)
-            });
+            new KeyValuePair<string, string>("grant_type", "authorization_code"),
+            new KeyValuePair<string, string>("code", authorizationCode),
+            new KeyValuePair<string, string>("redirect_uri", redirectUri),
+            new KeyValuePair<string, string>("scope", "scope"),
+        });
 
-            HttpResponseMessage response = await _httpClient.SendAsync(request);
-            response.EnsureSuccessStatusCode();
-
-            var responseContent = await response.Content.ReadAsStringAsync();
-            JObject tokenResponse = JObject.Parse(responseContent);
-            _accessToken = tokenResponse["access_token"].ToString();
-            _refreshToken = tokenResponse["refresh_token"].ToString();
-            _tokenExpiration = tokenResponse["expires_in"].ToObject<int>();
-
-            // Save tokens to database
-            var token = new Token
+            var request = new HttpRequestMessage(HttpMethod.Post, tokenUrl)
             {
-                AccessToken = _accessToken,
-                RefreshToken = _refreshToken,
-                Expiration = DateTime.UtcNow.AddSeconds(_tokenExpiration)
+                Content = content
             };
 
-            _context.Tokens.Add(token);
-            await _context.SaveChangesAsync();
+            var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{clientSecret}"));
+            request.Headers.Authorization = new AuthenticationHeaderValue("Basic", authValue);
 
-            return _accessToken;
+            // הדפסת פרטי הבקשה
+            Console.WriteLine("Request Headers:");
+            foreach (var header in request.Headers)
+            {
+                Console.WriteLine($"{header.Key}: {string.Join(", ", header.Value)}");
+            }
+
+            Console.WriteLine("Request Content Headers:");
+            foreach (var header in request.Content.Headers)
+            {
+                Console.WriteLine($"{header.Key}: {string.Join(", ", header.Value)}");
+            }
+
+            Console.WriteLine("Request Body:");
+            Console.WriteLine(await request.Content.ReadAsStringAsync());
+
+            HttpResponseMessage response = await _httpClient.SendAsync(request);
+
+            // הדפסת סטטוס קוד ופרטי התשובה
+            Console.WriteLine("Response Status Code:");
+            Console.WriteLine(response.StatusCode);
+
+            Console.WriteLine("Response Headers:");
+            foreach (var header in response.Headers)
+            {
+                Console.WriteLine($"{header.Key}: {string.Join(", ", header.Value)}");
+            }
+
+            var responseContent = await response.Content.ReadAsStringAsync();
+            Console.WriteLine("Response Body:");
+            Console.WriteLine(responseContent);
+
+            if (response.IsSuccessStatusCode)
+            {
+                JObject tokenResponse = JObject.Parse(responseContent);
+                _accessToken = tokenResponse["access_token"].ToString();
+                _refreshToken = tokenResponse["refresh_token"].ToString();
+                _tokenExpiration = tokenResponse["expires_in"].ToObject<int>();
+
+                // Save tokens to database
+                var token = new Token
+                {
+                    AccessToken = _accessToken,
+                    RefreshToken = _refreshToken,
+                    Expiration = DateTime.UtcNow.AddSeconds(_tokenExpiration)
+                };
+
+                // Assuming _context is an instance of your database context
+                _context.Tokens.Add(token);
+                await _context.SaveChangesAsync();
+
+                return _accessToken;
+            }
+            else
+            {
+                // Handle error response
+                Console.WriteLine("Error Response:");
+                Console.WriteLine(responseContent);
+                throw new Exception($"Error retrieving access token: {response.StatusCode}");
+            }
         }
 
-        public async Task<string> RefreshAccessToken()
+
+        public async Task<Token> RefreshAccessToken()
         {
             var request = new HttpRequestMessage(HttpMethod.Post, tokenUrl);
             request.Content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("client_id", clientId),
                 new KeyValuePair<string, string>("client_secret", clientSecret),
-                new KeyValuePair<string, string>("redirect_uri", redirectUri),
                 new KeyValuePair<string, string>("grant_type", "refresh_token"),
-                new KeyValuePair<string, string>("refresh_token", _refreshToken)
+                new KeyValuePair<string, string>("refresh_token", _refreshToken),
+                new KeyValuePair<string, string>("scope", "scope"),
             });
 
             HttpResponseMessage response = await _httpClient.SendAsync(request);
@@ -94,23 +141,23 @@ namespace SegalAPI.Services
 
             var responseContent = await response.Content.ReadAsStringAsync();
             JObject tokenResponse = JObject.Parse(responseContent);
-            _accessToken = tokenResponse["access_token"].ToString();
-            _tokenExpiration = tokenResponse["expires_in"].ToObject<int>();
+            var newAccessToken = tokenResponse["access_token"].ToString();
+            var newRefreshToken = tokenResponse["refresh_token"].ToString();
 
-            // Update token in database
-            var token = await _context.Tokens.FirstOrDefaultAsync(t => t.RefreshToken == _refreshToken);
+            var newExpiration = tokenResponse["expires_in"].ToObject<int>();
+            var expirationDateTime = DateTime.Now.AddSeconds(newExpiration);
+
+            var token = new Token { AccessToken = newAccessToken, RefreshToken = newRefreshToken, Expiration = expirationDateTime };
             if (token != null)
             {
-                token.AccessToken = _accessToken;
-                token.Expiration = DateTime.UtcNow.AddSeconds(_tokenExpiration);
-                _context.Tokens.Update(token);
+                _context.Tokens.Add(token);
                 await _context.SaveChangesAsync();
             }
 
-            return _accessToken;
+            return token;
         }
 
-        public async Task<string> GetInvoiceNumber()
+        public async Task<string> GetInvoiceNumber(InvoiceCSVData data)
         {
             try
             {
@@ -120,58 +167,64 @@ namespace SegalAPI.Services
                     throw new Exception("Access token is not available.");
                 }
 
-                return await GetInvoiceNumberWithAccessToken();
+                return await GetInvoiceNumberWithAccessToken(data);
             }
             catch (Exception ex)
             {
-                // If an error occurs, try to refresh the access token and retry
-                if (ex.Message.Contains("401")) // Unauthorized error
-                {
-                    await RefreshAccessToken();
-                    return await GetInvoiceNumberWithAccessToken();
-                }
+                await RefreshAccessToken();
+                return await GetInvoiceNumberWithAccessToken(data);
+
 
                 // Handle other exceptions
                 throw new Exception("Error getting invoice number", ex);
             }
         }
 
-        private async Task<string> GetInvoiceNumberWithAccessToken()
+        private async Task<string> GetInvoiceNumberWithAccessToken(InvoiceCSVData data)
         {
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
 
+
             var invoiceRequest = new
             {
-                Invoice_ID = "72727890",
-                Invoice_Type = 305,
-                Vat_Number = 777777715,
-                Union_Vat_Number = 0,
-                Invoice_Reference_Number = "015345367",
-                Customer_VAT_Number = 111111118,
-                Customer_Name = "עלי אבוג'דידה",
-                Invoice_Date = "2024-06-14",
-                Invoice_Issuance_Date = "2024-06-16",
-                Branch_ID = "716A",
-                Accounting_Software_Number = 207703,
-                Client_Software_Key = "G4255422",
-                Amount_Before_Discount = 10508.08,
-                Discount = 202.24,
-                Payment_Amount = 10305.84,
-                VAT_Amount = 1751.99,
-                Payment_Amount_Including_VAT = 12057.83,
-                Invoice_Note = "לתאם הספקה עם אחמד 052-9290009",
-                Action = 0,
-                Vehicle_License_Number = 0,
-                Transition_Location = 0,
-                Delivery_Address = "",
-                Additional_Information = 4365,
-                Items = new[]
+                data.Invoice_ID,
+                data.Invoice_Type,
+                data.Vat_Number,
+                data.Union_Vat_Number,
+                data.Invoice_Reference_Number,
+                data.Customer_VAT_Number,
+                data.Customer_Name,
+                Invoice_Date = data.Invoice_Date.ToString("yyyy-MM-dd"),
+                Invoice_Issuance_Date = data.Invoice_Issuance_Date.ToString("yyyy-MM-dd"),
+                data.Branch_ID,
+                data.Accounting_Software_Number,
+                data.Client_Software_Key,
+                data.Amount_Before_Discount,
+                data.Discount,
+                data.Payment_Amount,
+                data.VAT_Amount,
+                data.Payment_Amount_Including_VAT,
+                data.Invoice_Note,
+                data.Action,
+                data.Vehicle_License_Number,
+                data.Transition_Location,
+                data.Delivery_Address,
+                data.Additional_Information,
+                Items = data.Items.Select(item => new
                 {
-                    new { Index = 1, Catalog_ID = "אא--72729", Description = "דשא דרבן", Measure_Unit_Description = "מ\"ר", Quantity = 9.52, Price_Per_Unit = 2.89, Discount = 1.65, Total_Amount = 25.87, VAT_Rate = 17, VAT_Amount = 4.39 },
-                    new { Index = 2, Catalog_ID = "אא--72730", Description = "דשא דרבן", Measure_Unit_Description = "מ\"ר", Quantity = 19.05, Price_Per_Unit = 5.78, Discount = 3.3, Total_Amount = 106.81, VAT_Rate = 17, VAT_Amount = 18.15 },
-                    // Add other items here...
-                }
+                    item.Index,
+                    item.Catalog_ID,
+                    item.Description,
+                    item.Measure_Unit_Description,
+                    item.Quantity,
+                    item.Price_Per_Unit,
+                    item.Discount,
+                    item.Total_Amount,
+                    item.VAT_Rate,
+                    item.VAT_Amount
+                }).ToArray()
             };
+
 
             var request = new HttpRequestMessage(HttpMethod.Post, "https://openapi.taxes.gov.il/shaam/sandbox/longtimeacces");
             request.Content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(invoiceRequest), System.Text.Encoding.UTF8, "application/json");
@@ -194,9 +247,10 @@ namespace SegalAPI.Services
             return _tokenExpiration;
         }
 
-        public void SetAccessToken(string accessToken)
+        public void SetAccessToken(string accessToken, string refreshToken)
         {
             _accessToken = accessToken;
+            _refreshToken = refreshToken;
         }
     }
 }

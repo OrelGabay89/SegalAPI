@@ -19,6 +19,12 @@ namespace SegalAPI.Controllers
             _context = context;
         }
 
+        [HttpGet("_alive")]
+        public IActionResult IsAlive()
+        {
+            return Ok("API is up and running!");
+        }
+
         [HttpGet("authorize")]
         public IActionResult Authorize()
         {

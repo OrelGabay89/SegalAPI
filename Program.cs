@@ -3,6 +3,7 @@ using SegalAPI.Data;
 using SegalAPI.Interfaces;
 using SegalAPI.Services;
 
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -12,8 +13,13 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddHttpClient();  // Register HttpClient
 builder.Services.AddScoped<ITokenService, TokenService>();
 
+// Get the current directory and set the SQLite database path dynamically
+var basePath = Directory.GetCurrentDirectory();
+var dbPath = Path.Combine(basePath, "clientcredentials.db");
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection").Replace("CLIENT_CREDENTIALS_DB_PATH", dbPath);
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlite(connectionString));
 
 var app = builder.Build();
 
@@ -53,7 +59,7 @@ app.Use(async (context, next) =>
     await next();
 });
 
-// Get the port from the environment variable or use a default port (e.g., 5000)
+// Get the port from the environment variable or use a default port (e.g., 5001)
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5001";
 
 app.Run($"http://*:{port}");
